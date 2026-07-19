@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pairing Code Only - WhatsApp Bot</title>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:Inter, Arial, sans-serif;background:#f3f6ff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+        .card{background:#fff;border-radius:12px;padding:28px;max-width:420px;width:100%;box-shadow:0 10px 30px rgba(18,38,63,.08)}
+        h1{font-size:20px;margin-bottom:8px;color:#0f172a;text-align:center}
+        p.sub{color:#475569;text-align:center;margin-bottom:18px}
+        .input-group{display:flex;gap:10px;margin-bottom:16px}
+        input[type="text"]{flex:1;padding:12px;border:1px solid #e6edf3;border-radius:8px;font-size:15px}
+        button.primary{background:#2563eb;color:#fff;border:none;padding:12px 16px;border-radius:8px;cursor:pointer;font-weight:600}
+        button.primary[disabled]{opacity:.6;cursor:default}
+        #result{background:#f8fafc;border-radius:8px;padding:16px;min-height:88px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+        .code{font-size:34px;font-weight:700;color:#0b6b2b;letter-spacing:6px;background:#fff;padding:10px 18px;border-radius:8px;border:2px dashed #d1fae5;margin:8px 0}
+        .note{font-size:13px;color:#64748b}
+        .status{margin-top:12px;text-align:center;font-size:13px}
+        .spinner{border:4px solid #f3f3f3;border-top:4px solid #2563eb;border-radius:50%;width:30px;height:30px;animation:spin 1s linear infinite;margin:8px}
+        @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+        .error{color:#b91c1c;font-weight:600}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔑 Dapatkan Pairing Code</h1>
+        <p class="sub">Masukkan nomor WhatsApp (format internasional, contoh: 6281234567890)</p>
+
+        <div class="input-group">
+            <input id="phone" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="6281234567890" maxlength="20" />
+            <button id="btn" class="primary" onclick="requestCode()">Dapatkan</button>
+        </div>
+
+        <div id="result">
+            <div class="note">Hanya menampilkan pairing code. Setelah muncul, buka WhatsApp → Linked Devices → Link a device → Enter code.</div>
+        </div>
+
+        <div class="status" id="status">Memeriksa status...</div>
+    </div>
+
+<script>
+    const phoneEl = document.getElementById('phone');
+    const btn = document.getElementById('btn');
+    const resultEl = document.getElementById('result');
+    const statusEl = document.getElementById('status');
+    let isProcessing = false;
+
+    phoneEl.addEventListener('input', () => {
+        phoneEl.value = phoneEl.value.replace(/\D/g, '');
+    });
+
+    phoneEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') requestCode(); });
+
+    async function requestCode(){
+        if (isProcessing) return;
+        const phone = phoneEl.value.trim();
+        if (!phone){ alert('Masukkan nomor HP terlebih dahulu'); return; }
+        if (phone.length < 8){ alert('Nomor terlalu pendek'); return; }
+
+        isProcessing = true;
+        btn.disabled = true; btn.textContent = 'Meminta...';
+        resultEl.innerHTML = '<div class="spinner"></div><div class="note" style="margin-top:8px">Meminta pairing code...</div>';
+
+        try{
+            const res = await fetch('/api/pair', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success && data.code){
+                // show only code
+                resultEl.innerHTML = `
+                    <div style="font-size:32px;color:#0f5132">Kode berhasil dibuat</div>
+                    <div class="code">${escapeHtml(data.code)}</div>
+                    <div class="note">Salin kode dan masukkan di WhatsApp (Linked Devices → Link a device → Enter code). Kode mungkin hanya berlaku singkat.</div>
+                `;
+                // try copy
+                try{ await navigator.clipboard.writeText(data.code); }catch(e){}
+                statusEl.textContent = 'Kode siap — segera masukkan di WhatsApp';
+            } else {
+                const errMsg = data && (data.error || data.message) ? (data.error || data.message) : 'Gagal mengambil pairing code';
+                resultEl.innerHTML = `<div class="error">${escapeHtml(errMsg)}</div>`;
+                statusEl.textContent = 'Gagal';
+            }
+        }catch(err){
+            resultEl.innerHTML = `<div class="error">${escapeHtml(err.message || String(err))}</div>`;
+            statusEl.textContent = 'Gagal';
+        } finally {
+            isProcessing = false;
+            btn.disabled = false; btn.textContent = 'Dapatkan';
+        }
+    }
+
+    function escapeHtml(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+    async function checkStatus(){
+        try{
+            const res = await fetch('/api/status');
+            if (!res.ok) throw new Error('No status');
+            const data = await res.json();
+            if (data.status === 'connected'){
+                statusEl.textContent = `🟢 Online — Bot: ${data.botNumber || '-'} `;
+            } else {
+                statusEl.textContent = '🔴 Offline — belum terhubung';
+            }
+        }catch(e){
+            statusEl.textContent = '🔴 Offline';
+        }
+    }
+
+    setInterval(checkStatus, 5000);
+    checkStatus();
+</script>
+</body>
+</html>
